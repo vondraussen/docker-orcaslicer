@@ -52,13 +52,13 @@ RUN \
     libmspack0 \
     libwebkit2gtk-4.1-0 \
     libwx-perl && \
-  echo "**** install orcaslicer from appimage ****" && \
+  echo "**** install orcaslicer nightly from appimage ****" && \
+  NIGHTLY_API="https://api.github.com/repos/OrcaSlicer/OrcaSlicer/releases/tags/nightly-builds" && \
   if [ -z ${ORCASLICER_VERSION+x} ]; then \
-    ORCASLICER_VERSION=$(curl -sX GET "https://api.github.com/repos/OrcaSlicer/OrcaSlicer/releases/latest" \
-    | awk '/tag_name/{print $4;exit}' FS='[""]'); \
+    ORCASLICER_VERSION="nightly-$(date -u +%Y-%m-%d)"; \
   fi && \
-  RELEASE_URL=$(curl -sX GET "https://api.github.com/repos/OrcaSlicer/OrcaSlicer/releases/latest"     | awk '/url/{print $4;exit}' FS='[""]') && \
-  DOWNLOAD_URL=$(curl -sX GET "${RELEASE_URL}" | awk '/browser_download_url.*Ubuntu2404/{print $4;exit}' FS='[""]') && \
+  DOWNLOAD_URL=$(curl -sX GET "${NIGHTLY_API}" \
+    | awk '/browser_download_url.*Ubuntu2404_nightly/{print $4;exit}' FS='[""]') && \
   cd /tmp && \
   curl -o \
     /tmp/orca.app -L \

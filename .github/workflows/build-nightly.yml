@@ -1,0 +1,82 @@
+name: Build Nightly OrcaSlicer
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/nightly
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get OrcaSlicer nightly version
+        id: version
+        run: |
+          NIGHTLY_DATE=$(curl -sX GET \
+            "https://api.github.com/repos/OrcaSlicer/OrcaSlicer/releases/tags/nightly-builds" \
+            | jq -r '[.assets[] | select(.name | test("OrcaSlicer_Linux_AppImage_Ubuntu2404_nightly"))] | .[0].updated_at' \
+            | cut -c1-10)
+          if [ -z "${NIGHTLY_DATE}" ] || [ "${NIGHTLY_DATE}" = "null" ]; then
+            echo "Failed to retrieve nightly asset date"
+            exit 1
+          fi
+          VERSION="nightly-${NIGHTLY_DATE}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "OrcaSlicer nightly version: ${VERSION}"
+
+      - name: Check if image already exists
+        id: check
+        if: github.event_name != 'push'
+        run: |
+          TOKEN=$(curl -s \
+            "https://ghcr.io/token?scope=repository%3A${{ github.repository_owner }}%2Forcaslicer%3Apull" \
+            | jq -r '.token')
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            --header "Authorization: Bearer ${TOKEN}" \
+            "https://ghcr.io/v2/${{ github.repository_owner }}/orcaslicer/manifests/${{ steps.version.outputs.version }}")
+          if [ "${HTTP_CODE}" = "200" ]; then
+            echo "Image ghcr.io/${{ github.repository_owner }}/orcaslicer:${{ steps.version.outputs.version }} already exists, skipping build"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "New nightly detected, will build image"
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Docker Buildx
+        if: steps.check.outputs.skip != 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: steps.check.outputs.skip != 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        if: steps.check.outputs.skip != 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/orcaslicer:nightly
+            ghcr.io/${{ github.repository_owner }}/orcaslicer:${{ steps.version.outputs.version }}
+          build-args: |
+            BUILD_DATE=${{ github.run_id }}
+            VERSION=${{ steps.version.outputs.version }}
+            ORCASLICER_VERSION=${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
